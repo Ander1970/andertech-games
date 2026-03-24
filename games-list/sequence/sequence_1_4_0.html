@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>長者記憶練習 App (含每日目標)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* 基本佈局與狀態列樣式 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .status-bar {
+            background-color: #f8f8f8;
+            padding: 0 15px;
+            height: 44px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #e0e0e0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            box-sizing: border-box;
+        }
+
+        .status-bar .time {
+            font-weight: 600;
+        }
+
+        .status-bar .icons span {
+            margin-left: 5px;
+        }
+
+        /* 主要內容與頁面容器樣式 */
+        #app-content {
+            padding-top: 44px;
+            padding-bottom: 60px;
+            flex-grow: 1;
+            overflow-y: auto;
+            position: relative;
+            box-sizing: border-box;
+            background-color: #ffffff;
+        }
+
+        .page-content {
+            min-height: calc(100vh - 44px - 60px);
+            box-sizing: border-box;
+        }
+
+        /* Tab Bar 樣式 */
+        .tab-bar {
+            background-color: #f8f8f8;
+            border-top: 1px solid #d1d1d1;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 5px 0;
+            height: 60px;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            box-sizing: border-box;
+        }
+
+        .tab-bar button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            color: #8e8e93;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 10px;
+            padding: 5px 10px;
+            font-family: inherit;
+        }
+
+        .tab-bar button.active {
+            color: #007aff;
+        }
+
+        .tab-bar button i {
+            font-size: 22px;
+            margin-bottom: 2px;
+        }
+
+        /* 遊戲物品樣式 (包含動畫) */
+        .game-item {
+            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, opacity 0.3s ease-in-out;
+            cursor: pointer;
+        }
+
+        .game-item.selected-correctly {
+            opacity: 0.4;
+            transform: scale(0.9);
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.7);
+            pointer-events: none;
+        }
+
+        .game-item.incorrect-flash {
+            animation: shake-incorrect 0.5s;
+            border: 3px solid #dc2626;
+        }
+
+        .memorize-item-animate {
+            animation: fadeInScaleUp 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeInScaleUp {
+            from {
+                opacity: 0;
+                transform: scale(0.5);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes shake-incorrect {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            25% {
+                transform: translateX(-8px);
+            }
+
+            50% {
+                transform: translateX(8px);
+            }
+
+            75% {
+                transform: translateX(-8px);
+            }
+        }
+
+        .disabled-item {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 設定頁面 Switch Toggle 樣式 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: #2563eb;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(26px);
+        }
+
+        /* 結果頁 Confetti 容器樣式 */
+        .confetti-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        #page-result>div {
+            position: relative;
+            z-index: 2;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- iOS Status Bar 
+    <div class="status-bar">
+        <span class="time">9:41 AM</span>
+        <div class="icons">
+            <span>📶</span> <span>LTE</span> <span id="status-bar-username" class="ml-2 font-normal text-xs"></span> <span>🔋</span>
+        </div>
+    </div> 
+    -->
+
+    <!-- 主要內容區域 -->
+    <main id="app-content">
+
+        <!-- ==================== 登入 (Login) ==================== -->
+        <div id="page-login" class="page-content">
+            <div
+                class="bg-gradient-to-br from-green-400 to-teal-600 text-white flex flex-col items-center justify-center min-h-full p-6">
+                <div class="text-center w-full max-w-md bg-white/20 backdrop-blur-md p-8 rounded-xl shadow-xl">
+                    <img src="https://picsum.photos/seed/brainlogo/100/100?grayscale&blur=1" alt="App Logo"
+                        class="mx-auto mb-6 rounded-full shadow-lg w-24 h-24 object-cover">
+                    <h1 class="text-3xl font-bold mb-2">長者記憶通</h1>
+                    <p class="text-lg mb-6 opacity-90">請輸入或選擇您的用戶配置</p>
+                    <input type="text" id="login-username-input" placeholder="輸入用戶名稱"
+                        class="w-full p-3 mb-4 border border-gray-300 rounded-lg text-lg text-gray-800 focus:ring-2 focus:ring-teal-500 focus:border-teal-500">
+                    <div id="login-existing-users-div" class="mb-4 text-left max-h-32 overflow-y-auto"></div>
+                    <button id="login-button"
+                        class="w-full bg-teal-500 hover:bg-teal-700 text-white font-semibold py-3 px-6 rounded-lg text-xl shadow-md transition-colors mb-2">
+                        登入 / 建立配置
+                    </button>
+                    <p class="text-xs opacity-70">如果用戶名稱不存在，將會建立新的配置紀錄。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 首頁 (Home) ==================== -->
+        <div id="page-home" class="page-content hidden">
+            <div
+                class="bg-gradient-to-br from-sky-400 to-blue-600 text-white flex flex-col items-center justify-center min-h-full p-6">
+                <div class="text-center w-full max-w-md">
+                    <img src="https://picsum.photos/seed/brainlogo/150/150?grayscale&blur=2" alt="App Logo"
+                        class="mx-auto mb-8 rounded-full shadow-xl w-32 h-32 md:w-40 md:h-40 object-cover">
+                    <h1 class="text-4xl md:text-5xl font-bold mb-4">長者記憶通</h1>
+                    <p class="text-lg md:text-xl mb-10 opacity-90">每日輕鬆練習，活化大腦記憶！</p>
+                    <button id="home-start-game-button"
+                        class="w-full bg-white text-blue-600 font-semibold py-4 px-6 rounded-xl text-xl md:text-2xl shadow-lg hover:bg-gray-100 transition-colors duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300 mb-6">
+                        <i class="fas fa-play mr-3"></i>開始遊戲
+                    </button>
+                    <div class="grid grid-cols-2 gap-4">
+                        <button id="home-go-settings-button"
+                            class="bg-white/30 backdrop-blur-md text-white font-medium py-3 px-4 rounded-lg text-md shadow-md hover:bg-white/50 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-sky-200">
+                            <i class="fas fa-cog mr-2"></i>遊戲設定
+                        </button>
+                        <button onclick="alert('玩法說明：\n1. 記住畫面依序出現的圖案。\n2. 圖案消失後，在下方區域按剛才看到的順序點選。\n3. 全部答對即可進入下一關！')"
+                            class="bg-white/30 backdrop-blur-md text-white font-medium py-3 px-4 rounded-lg text-md shadow-md hover:bg-white/50 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-sky-200">
+                            <i class="fas fa-question-circle mr-2"></i>玩法說明
+                        </button>
+                    </div>
+                    <p class="mt-12 text-sm opacity-70">版本 1.4.0 (每日目標)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 遊戲 (Game) ==================== -->
+        <div id="page-game" class="page-content hidden">
+            <div class="bg-gray-100 flex flex-col items-center justify-center min-h-full p-4">
+                <div class="w-full max-w-lg bg-white p-6 rounded-xl shadow-2xl">
+                    <div id="game-status" class="text-center mb-6">
+                        <p class="text-xl font-semibold text-gray-700">
+                            關卡: <span id="game-current-level-display">1</span> | 物品數量: <span
+                                id="game-items-count-display">0</span>
+                        </p>
+                        <p id="game-instruction-text"
+                            class="text-2xl font-bold text-blue-600 mt-2 h-16 flex items-center justify-center">
+                            點擊下方按鈕開始遊戲
+                        </p>
+                    </div>
+                    <div id="game-board"
+                        class="min-h-[200px] md:min-h-[250px] p-4 bg-blue-50 rounded-lg flex flex-wrap items-center justify-center gap-3 md:gap-4 mb-8">
+                    </div>
+                    <div class="mb-6 p-3 bg-gray-50 rounded-lg min-h-[60px]">
+                        <p class="text-sm text-gray-500 mb-1">您選擇的順序：</p>
+                        <div id="game-selected-sequence-display"
+                            class="flex flex-wrap gap-2 items-center justify-center min-h-[40px]"></div>
+                    </div>
+                    <div id="game-controls-area" class="flex justify-around">
+                        <button id="game-start-game-button"
+                            class="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-8 rounded-lg text-lg shadow-md transition-colors">
+                            <i class="fas fa-play mr-2"></i>開始新遊戲
+                        </button>
+                        <button id="game-retry-button"
+                            class="hidden bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-6 rounded-lg text-lg shadow-md transition-colors">
+                            <i class="fas fa-redo mr-2"></i>重試本關
+                        </button>
+                        <button id="game-quit-button"
+                            class="bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-6 rounded-lg text-lg shadow-md transition-colors">
+                            <i class="fas fa-sign-out-alt mr-2"></i>回首頁
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 結果 (Result) ==================== -->
+        <div id="page-result" class="page-content hidden">
+            <div class="bg-gray-50 flex flex-col items-center justify-center min-h-full p-6">
+                <div class="confetti-container"></div>
+                <div class="text-center bg-white p-8 md:p-12 rounded-xl shadow-2xl w-full max-w-md">
+                    <div id="result-success-message" class="hidden">
+                        <i class="fas fa-trophy text-yellow-400 text-7xl md:text-8xl mb-6 animate-bounce"></i>
+                        <h2 class="text-3xl md:text-4xl font-bold text-green-600 mb-3">恭喜您！</h2>
+                        <p class="text-lg md:text-xl text-gray-700 mb-8">記憶挑戰成功！您的腦力真棒！</p>
+                        <p class="text-md text-gray-600 mb-2">本次得分：<span id="result-score"
+                                class="font-bold text-blue-600 text-xl">0分</span></p>
+                        <p class="text-md text-gray-600 mb-8">歷史最佳：<span id="result-best-score"
+                                class="font-bold text-blue-600 text-xl">0分</span></p>
+                    </div>
+                    <div id="result-failure-message" class="hidden">
+                        <i class="far fa-sad-tear text-blue-400 text-7xl md:text-8xl mb-6"></i>
+                        <h2 class="text-3xl md:text-4xl font-bold text-red-600 mb-3">再接再厲！</h2>
+                        <p class="text-lg md:text-xl text-gray-700 mb-8">這次差一點點，下次一定會更好！</p>
+                        <p class="text-md text-gray-600 mb-8">別灰心，多練習幾次就會進步哦！</p>
+                    </div>
+                    <div id="result-daily-target-achieved"
+                        class="hidden my-4 p-3 bg-emerald-100 border border-emerald-300 rounded-md text-emerald-700">
+                        <i class="fas fa-check-circle mr-2"></i>太棒了！您已完成今日目標！🎉
+                    </div>
+                    <div class="space-y-4">
+                        <button id="result-next-button"
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg text-lg md:text-xl shadow-md transition-colors transform hover:scale-105"></button>
+                        <button id="result-home-button"
+                            class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3 px-6 rounded-lg text-lg md:text-xl shadow-md transition-colors">
+                            <i class="fas fa-home mr-2"></i>返回首頁
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 設定 (Settings) ==================== -->
+        <div id="page-settings" class="page-content hidden">
+            <div class="bg-gray-100 min-h-full py-8 px-4">
+                <div class="max-w-2xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-xl">
+                    <h1 class="text-3xl font-bold text-gray-800 mb-8 text-center border-b pb-4">
+                        <i class="fas fa-sliders-h mr-3 text-blue-600"></i>遊戲設定 <span id="settings-for-user"
+                            class="text-base font-normal text-gray-500"></span>
+                    </h1>
+                    <div class="mb-8">
+                        <h2 class="text-xl font-semibold text-gray-700 mb-3"><i class="fas fa-cubes mr-2"></i>難度級別
+                            (起始物品數量)</h2>
+                        <div class="grid grid-cols-3 gap-3" id="settings-difficulty-buttons">
+                            <button class="p-4 rounded-lg text-lg font-medium border-2 transition-all"
+                                onclick="settings_selectDifficulty(this, 2)">2 個物品</button>
+                            <button class="p-4 rounded-lg text-lg font-medium border-2 transition-all"
+                                onclick="settings_selectDifficulty(this, 3)">3 個物品</button>
+                            <button class="p-4 rounded-lg text-lg font-medium border-2 transition-all"
+                                onclick="settings_selectDifficulty(this, 4)">4 個物品</button>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-2">選擇遊戲開始時需要記憶的物品數量 (每關會增加)。</p>
+                    </div>
+                    <div class="mb-8 flex justify-between items-center py-4 border-t border-b">
+                        <div>
+                            <h2 class="text-xl font-semibold text-gray-700"><i class="fas fa-volume-up mr-2"></i>遊戲音效
+                            </h2>
+                            <p class="text-sm text-gray-500">開啟或關閉按鈕點擊及提示音效。</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="settings-sound-toggle" checked
+                                onchange="settings_toggleSound(this.checked)">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="mb-8">
+                        <h2 class="text-xl font-semibold text-gray-700 mb-3"><i class="fas fa-palette mr-2"></i>圖案主題
+                        </h2>
+                        <select id="settings-theme-select"
+                            class="w-full p-3 border border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="fruits">水果樂園</option>
+                            <option value="animals">動物世界</option>
+                            <option value="numbers">數字挑戰</option>
+                            <option value="shapes">形狀認知</option>
+                        </select>
+                        <p class="text-sm text-gray-500 mt-2">選擇您喜歡的記憶圖案類型。</p>
+                    </div>
+                    <div class="mt-10 text-center">
+                        <button onclick="settings_saveSettings()"
+                            class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-lg text-lg shadow-md transition-colors focus:outline-none focus:ring-2 focus:ring-green-400">
+                            <i class="fas fa-save mr-2"></i>儲存設定
+                        </button>
+                    </div>
+                    <div class="mt-8 pt-8 border-t text-center">
+                        <button onclick="settings_resetProfile()"
+                            class="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-8 rounded-lg text-lg shadow-md transition-colors">
+                            <i class="fas fa-trash-alt mr-2"></i>清除此用戶紀錄
+                        </button>
+                        <p class="text-xs text-gray-500 mt-2">此操作將會清除目前用戶的遊戲進度與統計數據。</p>
+                    </div>
+                    <div class="mt-4 text-center">
+                        <button id="settings-logout-button"
+                            class="bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-8 rounded-lg text-lg shadow-md transition-colors">
+                            <i class="fas fa-sign-out-alt mr-2"></i>登出配置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 個人 (Profile) ==================== -->
+        <div id="page-profile" class="page-content hidden">
+            <div class="bg-gray-100 min-h-full py-8 px-4">
+                <div class="max-w-2xl mx-auto">
+                    <div class="bg-white p-6 rounded-xl shadow-xl mb-8 flex items-center space-x-6">
+                        <img src="https://picsum.photos/seed/useravatar/100/100?shape=circle" alt="User Avatar"
+                            class="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-blue-500 object-cover">
+                        <div>
+                            <h1 id="profile-username-display" class="text-2xl md:text-3xl font-bold text-gray-800">用戶名稱
+                            </h1>
+                            <p class="text-gray-600 text-md">練習時長：<span id="profile-total-playtime"
+                                    class="font-semibold">0秒</span></p>
+                        </div>
+                    </div>
+
+                    <!-- 每日目標顯示區 -->
+                    <div class="bg-white p-6 rounded-xl shadow-xl mb-8">
+                        <h2 class="text-xl font-semibold text-gray-700 mb-2"><i
+                                class="fas fa-bullseye mr-2 text-sky-600"></i>今日目標</h2>
+                        <div id="daily-target-display"
+                            class="p-3 bg-sky-50 border border-sky-200 rounded-md text-sky-700">
+                            <p class="font-medium"><span id="daily-target-description">讀取中...</span></p>
+                            <div class="w-full bg-gray-200 rounded-full h-5 mt-2 relative">
+                                <div id="daily-target-progress-bar"
+                                    class="bg-sky-500 h-5 rounded-full text-xs text-white text-center leading-5 transition-all duration-500 ease-out"
+                                    style="width: 0%;">
+                                    0%
+                                </div>
+                            </div>
+                            <p id="daily-target-status" class="text-xs mt-1 text-right"></p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                            <i class="fas fa-star text-yellow-500 text-4xl mb-3"></i>
+                            <p class="text-3xl font-bold text-gray-700" id="profile-best-score">0</p>
+                            <p class="text-gray-500">歷史最高分</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                            <i class="fas fa-brain text-pink-500 text-4xl mb-3"></i>
+                            <p class="text-3xl font-bold text-gray-700" id="profile-average-accuracy">0%</p>
+                            <p class="text-gray-500">平均正確率</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                            <i class="fas fa-calendar-check text-green-500 text-4xl mb-3"></i>
+                            <p class="text-3xl font-bold text-gray-700" id="profile-consecutive-days">0</p>
+                            <p class="text-gray-500">連續練習天數</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                            <i class="fas fa-gamepad text-blue-500 text-4xl mb-3"></i>
+                            <p class="text-3xl font-bold text-gray-700" id="profile-games-played">0</p>
+                            <p class="text-gray-500">總遊玩局數</p>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <button id="profile-logout-button"
+                            class="bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-8 rounded-lg text-lg shadow-md transition-colors">
+                            <i class="fas fa-sign-out-alt mr-2"></i>登出配置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- iOS Tab Bar -->
+    <nav class="tab-bar">
+        <button data-target="page-home" class="tab-button active">
+            <i class="fas fa-home"></i>
+            <span>首頁</span>
+        </button>
+        <button data-target="page-profile" class="tab-button">
+            <i class="fas fa-user"></i>
+            <span>個人</span>
+        </button>
+        <button data-target="page-settings" class="tab-button">
+            <i class="fas fa-cog"></i>
+            <span>設定</span>
+        </button>
+    </nav>
+
+    <script>
+        // ==================== 全域變數與設定 ====================
+        let currentUsername = null;
+        const defaultAppSettings = { startDifficulty: 3, soundEnabled: true, itemTheme: 'fruits' };
+        const defaultUserProfile = {
+            bestScore: 0, totalPlayTime: 0, totalGamesPlayed: 0,
+            totalCorrectSelections: 0, totalSelections: 0,
+            lastPlayDate: null, consecutiveDays: 0, firstPlayDate: null,
+            dailyTarget: { date: null, type: null, targetValue: 0, currentValue: 0, achieved: false } // 新增每日目標結構
+        };
+        let appSettings = { ...defaultAppSettings };
+        let userProfile = { ...defaultUserProfile };
+        let game_startTime = null;
+
+        // DOM Elements
+        const login_usernameInputEl = document.getElementById('login-username-input');
+        const login_buttonEl = document.getElementById('login-button');
+        const login_existingUsersDivEl = document.getElementById('login-existing-users-div');
+        // const statusBarUsernameEl = document.getElementById('status-bar-username');
+        const settingsForUserEl = document.getElementById('settings-for-user');
+        const profileUsernameDisplayEl = document.getElementById('profile-username-display');
+        const dailyTargetDescriptionEl = document.getElementById('daily-target-description');
+        const dailyTargetProgressBarEl = document.getElementById('daily-target-progress-bar');
+        const dailyTargetStatusEl = document.getElementById('daily-target-status');
+        const resultDailyTargetAchievedEl = document.getElementById('result-daily-target-achieved');
+
+
+        // ==================== LocalStorage Key 生成函數 ====================
+        function getSettingsKey(username) { return `memoryGameSettingsV2_${username}`; } // V2 for possible schema changes
+        function getProfileKey(username) { return `memoryGameProfileV2_${username}`; }
+
+        // ==================== 登入/用戶配置邏輯 ====================
+        function login_populateExistingUsers() { /* ... (與之前相同) ... */ login_existingUsersDivEl.innerHTML = ''; let existingUsers = []; for (let i = 0; i < localStorage.length; i++) { const key = localStorage.key(i); if (key.startsWith('memoryGameProfileV2_')) { existingUsers.push(key.replace('memoryGameProfileV2_', '')); } } if (existingUsers.length > 0) { const p = document.createElement('p'); p.textContent = "或選擇現有配置："; p.classList.add('mb-2', 'text-sm', 'text-white'); login_existingUsersDivEl.appendChild(p); existingUsers.forEach(user => { const userButton = document.createElement('button'); userButton.textContent = user; userButton.classList.add('bg-white/30', 'text-white', 'py-1', 'px-3', 'rounded', 'mr-2', 'mb-2', 'text-sm', 'hover:bg-white/50', 'transition-colors'); userButton.onclick = () => { login_usernameInputEl.value = user; login_performLogin(); }; login_existingUsersDivEl.appendChild(userButton); }); } }
+        function login_performLogin() {
+            const username = login_usernameInputEl.value.trim();
+            if (!username) { alert("請輸入用戶名稱！"); return; }
+            currentUsername = username;
+            localStorage.setItem('currentMemoryGameUser', currentUsername);
+            /*statusBarUsernameEl.textContent = `(${currentUsername})`;*/
+            settingsForUserEl.textContent = `(用戶: ${currentUsername})`;
+            profileUsernameDisplayEl.textContent = currentUsername;
+
+            profile_loadData();
+            settings_loadCurrentSettings();
+            dailyTarget_checkAndGenerate(); // << 新增：檢查並生成每日目標
+
+            showPage('page-home');
+            game_resetGame();
+            profile_updateDisplay(); // 更新包含每日目標的顯示
+        }
+        function logout() { /* ... (與之前相同，但重置 appSettings 和 userProfile) ... */ if (confirm(`您確定要登出用戶配置 "${currentUsername}" 嗎？`)) { currentUsername = null; localStorage.removeItem('currentMemoryGameUser');/*statusBarUsernameEl.textContent='';*/settingsForUserEl.textContent = ''; profileUsernameDisplayEl.textContent = '用戶名稱'; appSettings = { ...defaultAppSettings }; userProfile = { ...defaultUserProfile }; showPage('page-login'); login_usernameInputEl.value = ''; login_populateExistingUsers(); profile_updateDisplay(); } }
+        document.getElementById('settings-logout-button').addEventListener('click', logout);
+        document.getElementById('profile-logout-button').addEventListener('click', logout);
+
+
+        // ==================== 導覽邏輯 (與之前相同) ====================
+        const pages = document.querySelectorAll('.page-content');
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const appContent = document.getElementById('app-content');
+        function showPage(pageId) { /* ... (與之前相同，確保 profile_updateDisplay 被調用) ... */ pages.forEach(page => page.classList.add('hidden')); const targetPage = document.getElementById(pageId); if (targetPage) { targetPage.classList.remove('hidden'); appContent.scrollTop = 0; if (pageId === 'page-profile') profile_updateDisplay(); if (pageId === 'page-settings') { settings_loadCurrentSettings(); settingsForUserEl.textContent = currentUsername ? `(用戶: ${currentUsername})` : ''; } if (pageId === 'page-home' && !currentUsername) { showPage('page-login'); login_populateExistingUsers(); return; } } tabButtons.forEach(button => button.classList.toggle('active', button.dataset.target === pageId)); }
+        tabButtons.forEach(button => { button.addEventListener('click', () => { const targetPageId = button.dataset.target; if (!currentUsername && (targetPageId === 'page-profile' || targetPageId === 'page-settings' || targetPageId === 'page-home')) { alert("請先登入或建立用戶配置。"); showPage('page-login'); login_populateExistingUsers(); } else { showPage(targetPageId); } }); });
+        document.getElementById('home-start-game-button').addEventListener('click', () => { if (!currentUsername) { alert("請先登入！"); showPage('page-login'); login_populateExistingUsers(); return; } showPage('page-game'); game_initGame(); });
+        document.getElementById('home-go-settings-button').addEventListener('click', () => { if (!currentUsername) { alert("請先登入！"); showPage('page-login'); login_populateExistingUsers(); return; } showPage('page-settings'); });
+        document.getElementById('game-quit-button').addEventListener('click', () => { if (game_phase !== 'idle' && game_phase !== 'feedback') { if (!confirm("遊戲正在進行中，確定要退出嗎？")) return; updatePlaytimeAndDailyData(); } showPage('page-home'); game_resetGame(); });
+        document.getElementById('result-home-button').addEventListener('click', () => { showPage('page-home'); game_resetGame(); });
+        document.getElementById('result-next-button').addEventListener('click', () => { showPage('page-game'); if (game_lastResultWasSuccess) game_startGameSequence(true); else game_startGameSequence(false); });
+        login_buttonEl.addEventListener('click', login_performLogin);
+
+
+        // ==================== 遊戲物品定義 (水果和動物擴充到12種) ====================
+        const GAME_ITEM_TYPES = { IMAGE: 'image', NUMBER: 'number', SVG: 'svg', EMOJI: 'emoji' };
+        const GAME_AVAILABLE_ITEMS = {
+            fruits: [
+                { id: 'apple', type: GAME_ITEM_TYPES.EMOJI, value: '🍎' }, { id: 'banana', type: GAME_ITEM_TYPES.EMOJI, value: '🍌' },
+                { id: 'orange', type: GAME_ITEM_TYPES.EMOJI, value: '🍊' }, { id: 'grape', type: GAME_ITEM_TYPES.EMOJI, value: '🍇' },
+                { id: 'strawberry', type: GAME_ITEM_TYPES.EMOJI, value: '🍓' }, { id: 'watermelon', type: GAME_ITEM_TYPES.EMOJI, value: '🍉' },
+                { id: 'lemon', type: GAME_ITEM_TYPES.EMOJI, value: '🍋' }, { id: 'pineapple', type: GAME_ITEM_TYPES.EMOJI, value: '🍍' },
+                { id: 'cherry', type: GAME_ITEM_TYPES.EMOJI, value: '🍒' }, { id: 'pear', type: GAME_ITEM_TYPES.EMOJI, value: '🍐' },
+                { id: 'peach', type: GAME_ITEM_TYPES.EMOJI, value: '🍑' }, { id: 'mango', type: GAME_ITEM_TYPES.EMOJI, value: '🥭' }
+            ],
+            animals: [
+                { id: 'cat', type: GAME_ITEM_TYPES.EMOJI, value: '🐱' }, { id: 'dog', type: GAME_ITEM_TYPES.EMOJI, value: '🐶' },
+                { id: 'bird', type: GAME_ITEM_TYPES.EMOJI, value: '🐦' }, { id: 'fish', type: GAME_ITEM_TYPES.EMOJI, value: '🐠' },
+                { id: 'rabbit', type: GAME_ITEM_TYPES.EMOJI, value: '🐇' }, { id: 'bear', type: GAME_ITEM_TYPES.EMOJI, value: '🐻' },
+                { id: 'panda', type: GAME_ITEM_TYPES.EMOJI, value: '🐼' }, { id: 'lion', type: GAME_ITEM_TYPES.EMOJI, value: '🦁' },
+                { id: 'mouse', type: GAME_ITEM_TYPES.EMOJI, value: '🐭' }, { id: 'cow', type: GAME_ITEM_TYPES.EMOJI, value: '🐮' },
+                { id: 'tiger', type: GAME_ITEM_TYPES.EMOJI, value: '🐯' }, { id: 'frog', type: GAME_ITEM_TYPES.EMOJI, value: '🐸' }
+            ],
+            numbers: [
+                { id: 'num1', type: GAME_ITEM_TYPES.NUMBER, value: '1' },
+                { id: 'num2', type: GAME_ITEM_TYPES.NUMBER, value: '2' },
+                { id: 'num3', type: GAME_ITEM_TYPES.NUMBER, value: '3' },
+                { id: 'num4', type: GAME_ITEM_TYPES.NUMBER, value: '4' },
+                { id: 'num5', type: GAME_ITEM_TYPES.NUMBER, value: '5' },
+                { id: 'num6', type: GAME_ITEM_TYPES.NUMBER, value: '6' },
+                { id: 'num7', type: GAME_ITEM_TYPES.NUMBER, value: '7' },
+                { id: 'num8', type: GAME_ITEM_TYPES.NUMBER, value: '8' },
+                { id: 'num9', type: GAME_ITEM_TYPES.NUMBER, value: '9' },
+                { id: 'num0', type: GAME_ITEM_TYPES.NUMBER, value: '0' }
+            ],
+            shapes: [
+                { id: 'circle', type: GAME_ITEM_TYPES.SVG, value: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" fill="#007bff"/></svg>' },
+                { id: 'square', type: GAME_ITEM_TYPES.SVG, value: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="5" width="90" height="90" fill="#28a745"/></svg>' },
+                { id: 'triangle', type: GAME_ITEM_TYPES.SVG, value: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,5 95,95 5,95" fill="#ffc107"/></svg>' },
+                { id: 'star', type: GAME_ITEM_TYPES.SVG, value: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,5 61,40 98,40 68,62 79,96 50,75 21,96 32,62 2,40 39,40" fill="#dc3545"/></svg>' },
+                { id: 'heart', type: GAME_ITEM_TYPES.SVG, value: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50,90 L10,50 C10,20 40,10 50,30 C60,10 90,20 90,50 Z" fill="#e83e8c"/></svg>' },
+                { id: 'hexagon', type: GAME_ITEM_TYPES.SVG, value: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,5 93,27 93,72 50,95 7,72 7,27" fill="#6f42c1"/></svg>' },
+                { id: 'diamond', type: GAME_ITEM_TYPES.SVG, value: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,5 95,50 50,95 5,50" fill="#17a2b8"/></svg>' },
+                { id: 'pentagon', type: GAME_ITEM_TYPES.SVG, value: '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><polygon points="50,5 95,39 78,95 22,95 5,39" fill="#fd7e14"/></svg>' }
+            ],
+        };
+
+
+        // ==================== 遊戲 (Game) 邏輯 (大部分與之前相同) ====================
+        const game_gameBoard = document.getElementById('game-board');
+        const game_instructionText = document.getElementById('game-instruction-text');
+        const game_selectedSequenceDisplay = document.getElementById('game-selected-sequence-display');
+        const game_startGameButton = document.getElementById('game-start-game-button');
+        const game_retryButton = document.getElementById('game-retry-button');
+        const game_currentLevelDisplay = document.getElementById('game-current-level-display');
+        const game_itemsCountDisplay = document.getElementById('game-items-count-display');
+
+        let game_currentLevel = 1;
+        let game_itemsToMemorizeCount = 2;
+        let game_correctSequence = [];
+        let game_userSelectedSequence = [];
+        let game_phase = 'idle';
+        let game_memorizationDisplayTimePerItem = 1500;
+        let game_delayBetweenItems = 500;
+        let game_maxItems = 12; // <<< 增加最大物品上限以匹配水果/動物數量
+        let game_lastResultWasSuccess = false;
+        let game_currentScore = 0;
+
+        game_startGameButton.addEventListener('click', game_initGame);
+        game_retryButton.addEventListener('click', () => game_startGameSequence(false));
+
+        function game_resetGame() { /* ... (與之前相同) ... */ if (!currentUsername) return; game_currentLevel = 1; game_phase = 'idle'; game_itemsToMemorizeCount = appSettings.startDifficulty; game_instructionText.textContent = '點擊「開始新遊戲」按鈕'; game_gameBoard.innerHTML = ''; game_selectedSequenceDisplay.innerHTML = ''; game_startGameButton.classList.remove('hidden'); game_retryButton.classList.add('hidden'); game_startGameButton.textContent = '開始新遊戲'; game_startGameButton.onclick = game_initGame; game_currentScore = 0; }
+        function game_initGame() { /* ... (與之前相同) ... */ if (!currentUsername) return; game_currentLevel = 1; game_currentScore = 0; game_itemsToMemorizeCount = Math.max(2, appSettings.startDifficulty); game_startGameButton.classList.add('hidden'); game_retryButton.classList.add('hidden'); game_startTime = new Date(); if (!userProfile.firstPlayDate) { userProfile.firstPlayDate = new Date().toISOString().split('T')[0]; } game_startGameSequence(true); }
+        function game_startGameSequence(isNewRound) { /* ... (與之前相同) ... */ if (!currentUsername) return; game_phase = 'memorizing'; userProfile.totalGamesPlayed++; game_userSelectedSequence = []; game_correctSequence = []; game_gameBoard.innerHTML = ''; game_selectedSequenceDisplay.innerHTML = ''; game_startGameButton.classList.add('hidden'); game_retryButton.classList.add('hidden'); if (isNewRound && game_lastResultWasSuccess) { game_itemsToMemorizeCount = Math.min(game_maxItems, game_itemsToMemorizeCount + 1); } else if (!isNewRound) { } else { game_itemsToMemorizeCount = Math.max(2, appSettings.startDifficulty); game_currentLevel = 1; game_currentScore = 0; } game_lastResultWasSuccess = false; game_currentLevelDisplay.textContent = game_currentLevel; game_itemsCountDisplay.textContent = game_itemsToMemorizeCount; let currentItemPool = GAME_AVAILABLE_ITEMS[appSettings.itemTheme] || GAME_AVAILABLE_ITEMS.fruits; let availableCopy = [...currentItemPool]; for (let i = 0; i < game_itemsToMemorizeCount; i++) { if (availableCopy.length === 0) { console.warn("物品庫不足！主題 '" + appSettings.itemTheme + "' 物品數量不足 " + game_itemsToMemorizeCount + " 個。"); break; } const randomIndex = Math.floor(Math.random() * availableCopy.length); game_correctSequence.push(availableCopy.splice(randomIndex, 1)[0]); } game_instructionText.textContent = '請記住順序...'; game_instructionText.className = "text-2xl font-bold text-blue-600 mt-2 h-16 flex items-center justify-center"; game_displayMemorization(); }
+        async function game_displayMemorization() { /* ... (與之前相同) ... */ if (!currentUsername) return; game_gameBoard.innerHTML = ''; for (let i = 0; i < game_correctSequence.length; i++) { if (game_phase !== 'memorizing') break; game_gameBoard.innerHTML = ''; const item = game_correctSequence[i]; const itemElement = game_createItemElement(item, false); itemElement.classList.add('memorize-item-animate'); game_gameBoard.appendChild(itemElement); await game_sleep(game_memorizationDisplayTimePerItem); if (i < game_correctSequence.length - 1) await game_sleep(game_delayBetweenItems); } game_gameBoard.innerHTML = ''; if (game_phase === 'memorizing') game_startRecallPhase(); }
+        function game_startRecallPhase() { /* ... (與之前相同) ... */ if (!currentUsername || game_phase !== 'memorizing') return; game_phase = 'recalling'; game_instructionText.textContent = '請依照順序點選'; game_gameBoard.innerHTML = ''; let itemsForRecall = game_shuffleArray([...game_correctSequence]); itemsForRecall.forEach(item => { const itemElement = game_createItemElement(item, true); itemElement.addEventListener('click', () => game_handleItemClick(item, itemElement)); game_gameBoard.appendChild(itemElement); }); }
+        function game_handleItemClick(clickedItem, itemElement) { /* ... (與之前相同) ... */ if (!currentUsername || game_phase !== 'recalling' || itemElement.classList.contains('selected-correctly')) return; if (appSettings.soundEnabled) playSound('click'); game_userSelectedSequence.push(clickedItem.id); userProfile.totalSelections++; const displayClone = game_createItemElement(clickedItem, false); displayClone.classList.remove('text-5xl', 'md:text-6xl', 'text-6xl', 'md:text-7xl', 'p-2'); displayClone.classList.add('w-10', 'h-10', 'md:w-12', 'md:h-12', 'shadow-sm', 'm-1', 'flex', 'items-center', 'justify-center', 'overflow-hidden'); if (clickedItem.type === GAME_ITEM_TYPES.NUMBER) displayClone.classList.add('text-4xl', 'font-bold', 'text-blue-700'); else if (clickedItem.type === GAME_ITEM_TYPES.EMOJI) displayClone.classList.add('text-4xl', 'leading-none'); game_selectedSequenceDisplay.appendChild(displayClone); const expectedItemId = game_correctSequence[game_userSelectedSequence.length - 1].id; if (clickedItem.id === expectedItemId) { userProfile.totalCorrectSelections++; itemElement.classList.add('selected-correctly'); if (appSettings.soundEnabled) playSound('correct'); if (game_userSelectedSequence.length === game_correctSequence.length) { game_phase = 'feedback'; game_lastResultWasSuccess = true; game_currentScore += game_itemsToMemorizeCount * 10; if (game_currentScore > userProfile.bestScore) userProfile.bestScore = game_currentScore; game_instructionText.textContent = '太棒了！全部正確！'; game_instructionText.className = "text-2xl font-bold text-green-600 mt-2 h-16 flex items-center justify-center"; if (appSettings.soundEnabled) playSound('success'); game_currentLevel++; game_disableGameBoardClicks(); updatePlaytimeAndDailyData(); showResultPage(true); } } else { game_phase = 'feedback'; game_lastResultWasSuccess = false; itemElement.classList.add('incorrect-flash'); game_instructionText.textContent = '順序錯誤！挑戰失敗。'; game_instructionText.className = "text-2xl font-bold text-red-600 mt-2 h-16 flex items-center justify-center"; if (appSettings.soundEnabled) playSound('incorrect'); game_disableGameBoardClicks(); updatePlaytimeAndDailyData(); showResultPage(false); } }
+        function game_disableGameBoardClicks() { /* ... (與之前相同) ... */ Array.from(game_gameBoard.children).forEach(c => c.style.pointerEvents = 'none'); }
+        function game_createItemElement(itemData, isClickable) {
+            // 創建主要的 div 元素
+            const div = document.createElement('div');
+            div.classList.add(
+                'game-item', 'aspect-square', 'bg-white', 'rounded-xl', 'shadow-lg',
+                'flex', 'items-center', 'justify-center', 'p-2',
+                'w-24', 'h-24', 'md:w-32', 'md:h-32', 'overflow-hidden'
+            );
+
+            // 如果物品是可點擊的，添加 hover 效果
+            if (isClickable) {
+                div.classList.add('hover:shadow-xl', 'transform', 'hover:scale-105');
+            }
+
+            // 根據物品類型處理
+            if (itemData.type === GAME_ITEM_TYPES.IMAGE && itemData.value) {
+                // 處理圖片類型
+                const img = document.createElement('img');
+                img.src = itemData.value;
+                img.alt = itemData.id;
+                img.classList.add('max-w-full', 'max-h-full', 'object-contain', 'pointer-events-none');
+
+                // 圖片加載錯誤處理
+                img.onerror = () => { // onerror 的函式體開始 {
+                    img.alt = itemData.id + " (圖片載入失敗)"; // 這行在 onerror 內部
+                    // 當圖片加載失敗時，我們應該顯示替代文本，而不是嘗試添加一個空的 img
+                    // 所以，我們不再設置 img.src='' 和 div.appendChild(img)
+                    // 而是直接修改 div 的內容來顯示錯誤信息
+                    div.innerHTML = ''; // 清空 div 中可能已有的子元素 (雖然此時應該沒有)
+                    div.textContent = `(${itemData.id} - 圖片錯誤)`;
+                    div.classList.add('text-xs', 'text-red-500');
+                }; // onerror 的函式體結束 }
+
+                // 只有在圖片沒有錯誤時才添加到 div (onerror 是異步的，所以這裡的邏輯需要更小心)
+                // 一個更穩妥的做法是先添加，onerror 時再移除並替換內容。
+                // 或者，像上面 onerror 修改的那樣，直接在 onerror 時改變 div 內容。
+                // 為了簡化，我們先假設圖片能正常加載，如果出錯，onerror 會處理。
+                // 如果 onerror 觸發，它會改變 div 的內容，所以後面的 appendChild 可能不會如預期。
+                // 更好的做法是：
+                // div.appendChild(img); // 先添加，onerror 處理後續
+                // 但如果圖片一開始就無效 (例如 src 為空)，onerror 可能不會立即觸發。
+
+                // 修正後的邏輯：如果 src 有效，才嘗試 appendChild
+                if (img.src) { // 確保 src 不是空字串
+                    div.appendChild(img);
+                } else { // 如果 itemData.value 本身就是空的或無效的
+                    div.textContent = `(${itemData.id} - 圖片路徑無效)`;
+                    div.classList.add('text-xs', 'text-red-500');
+                }
+
+            } else if (itemData.type === GAME_ITEM_TYPES.NUMBER) {
+                // 處理數字類型
+                div.classList.add('text-5xl', 'md:text-6xl', 'font-bold', 'text-blue-700');
+                div.textContent = itemData.value;
+
+            } else if (itemData.type === GAME_ITEM_TYPES.SVG && itemData.value) {
+                // 處理 SVG 類型
+                div.innerHTML = itemData.value; // 直接將 SVG 字串放入 div
+                const svgElement = div.querySelector('svg');
+                if (svgElement) { // 確保 SVG 元素存在
+                    svgElement.style.width = '90%';
+                    svgElement.style.height = '90%';
+                    svgElement.classList.add('pointer-events-none'); // 確保點擊事件在 div 上
+                }
+
+            } else if (itemData.type === GAME_ITEM_TYPES.EMOJI && itemData.value) {
+                // 處理 Emoji 類型
+                div.classList.add('text-6xl', 'md:text-7xl', 'leading-none');
+                div.textContent = itemData.value;
+
+            } else {
+                // 處理未知類型或無效數據的 fallback
+                div.textContent = `(${itemData.id || '未知物品'})`;
+                div.classList.add('text-xs');
+            }
+
+            return div; // 返回創建好的 div 元素
+        }
+        function game_shuffleArray(array) { /* ... (與之前相同) ... */ for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[array[i], array[j]] = [array[j], array[i]]; } return array; }
+        function game_sleep(ms) { /* ... (與之前相同) ... */ return new Promise(resolve => setTimeout(resolve, ms)); }
+
+        // ==================== 每日目標和數據更新邏輯 ====================
+        function updatePlaytimeAndDailyData() { // 合併了每日目標更新
+            if (!currentUsername) return;
+
+            // 更新遊玩時長
+            if (game_startTime) {
+                const endTime = new Date();
+                const durationSeconds = Math.round((endTime - game_startTime) / 1000);
+                userProfile.totalPlayTime += durationSeconds;
+                if (userProfile.dailyTarget && userProfile.dailyTarget.type === 'playTime') {
+                    userProfile.dailyTarget.currentValue += durationSeconds;
+                }
+                game_startTime = null;
+            }
+
+            // 更新連續練習天數
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            if (userProfile.lastPlayDate) {
+                if (userProfile.lastPlayDate !== todayStr) {
+                    const lastPlay = new Date(userProfile.lastPlayDate);
+                    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+                    const yesterdayStr = yesterday.toISOString().split('T')[0];
+                    if (userProfile.lastPlayDate === yesterdayStr) userProfile.consecutiveDays++;
+                    else userProfile.consecutiveDays = 1;
+                    userProfile.lastPlayDate = todayStr;
+                }
+            } else { userProfile.consecutiveDays = 1; userProfile.lastPlayDate = todayStr; }
+
+            // 更新每日目標進度 (更通用)
+            if (userProfile.dailyTarget && !userProfile.dailyTarget.achieved) {
+                if (userProfile.dailyTarget.type === 'gamesPlayed') {
+                    // gamesPlayed 在遊戲成功結束時增加 (見下方 showResultPage)
+                } else if (userProfile.dailyTarget.type === 'scoreTarget') {
+                    // scoreTarget 在遊戲成功結束時增加 (見下方 showResultPage)
+                }
+                // playTime 已在上面更新
+                if (userProfile.dailyTarget.currentValue >= userProfile.dailyTarget.targetValue) {
+                    userProfile.dailyTarget.achieved = true;
+                    if (appSettings.soundEnabled) playSound('success'); // 每日目標達成音效
+                    resultDailyTargetAchievedEl.classList.remove('hidden'); // 在結果頁顯示達成提示
+                }
+            }
+            profile_saveData();
+        }
+
+        function dailyTarget_checkAndGenerate() {
+            if (!currentUsername) return;
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (!userProfile.dailyTarget || userProfile.dailyTarget.date !== todayStr) {
+                // 生成新目標
+                const targetTypes = ['gamesPlayed', 'scoreTarget', 'playTime'];
+                const selectedType = targetTypes[Math.floor(Math.random() * targetTypes.length)];
+                let targetValue = 0;
+                let description = "";
+
+                switch (selectedType) {
+                    case 'gamesPlayed':
+                        targetValue = Math.floor(Math.random() * 3) + 2; // 2-4 局
+                        description = `完成 ${targetValue} 局遊戲`;
+                        break;
+                    case 'scoreTarget':
+                        targetValue = (Math.floor(Math.random() * 10) + 5) * 100; // 500-1400 分
+                        description = `獲得 ${targetValue} 分`;
+                        break;
+                    case 'playTime':
+                        targetValue = (Math.floor(Math.random() * 11) + 5) * 60; // 5-15 分鐘 (秒)
+                        description = `練習 ${targetValue / 60} 分鐘`;
+                        break;
+                }
+                userProfile.dailyTarget = {
+                    date: todayStr,
+                    type: selectedType,
+                    targetValue: targetValue,
+                    currentValue: 0,
+                    achieved: false,
+                    description: description // 儲存描述方便顯示
+                };
+                profile_saveData();
+                console.log("New daily target generated:", userProfile.dailyTarget);
+            }
+            profile_updateDailyTargetDisplay(); // 無論如何都更新一次顯示
+        }
+
+        function profile_updateDailyTargetDisplay() {
+            if (!currentUsername || !userProfile.dailyTarget || !userProfile.dailyTarget.type) {
+                dailyTargetDescriptionEl.textContent = "今日暫無目標";
+                dailyTargetProgressBarEl.style.width = '0%';
+                dailyTargetProgressBarEl.textContent = '0%';
+                dailyTargetStatusEl.textContent = "";
+                return;
+            }
+
+            const target = userProfile.dailyTarget;
+            dailyTargetDescriptionEl.textContent = target.description || `努力完成目標！`;
+
+            let progressPercent = 0;
+            if (target.targetValue > 0) {
+                progressPercent = Math.min(100, (target.currentValue / target.targetValue) * 100);
+            }
+
+            dailyTargetProgressBarEl.style.width = `${progressPercent.toFixed(0)}%`;
+            dailyTargetProgressBarEl.textContent = `${progressPercent.toFixed(0)}%`;
+
+            if (target.achieved) {
+                dailyTargetStatusEl.textContent = "已達成！🎉";
+                dailyTargetProgressBarEl.classList.remove('bg-sky-500');
+                dailyTargetProgressBarEl.classList.add('bg-emerald-500');
+            } else {
+                let statusText = "";
+                switch (target.type) {
+                    case 'gamesPlayed': statusText = `已完成 ${target.currentValue} / ${target.targetValue} 局`; break;
+                    case 'scoreTarget': statusText = `已獲得 ${target.currentValue} / ${target.targetValue} 分`; break;
+                    case 'playTime':
+                        const currentMin = Math.floor(target.currentValue / 60);
+                        const targetMin = target.targetValue / 60;
+                        statusText = `已練習 ${currentMin} / ${targetMin} 分鐘`;
+                        break;
+                }
+                dailyTargetStatusEl.textContent = statusText;
+                dailyTargetProgressBarEl.classList.add('bg-sky-500');
+                dailyTargetProgressBarEl.classList.remove('bg-emerald-500');
+            }
+        }
+
+
+        // ==================== 結果 (Result) 邏輯 ====================
+        const result_successMessage = document.getElementById('result-success-message');
+        const result_failureMessage = document.getElementById('result-failure-message');
+        const result_scoreDisplay = document.getElementById('result-score');
+        const result_bestScoreDisplay = document.getElementById('result-best-score');
+        const result_nextButton = document.getElementById('result-next-button');
+
+        function showResultPage(isSuccess) {
+            if (!currentUsername) return;
+
+            // 更新每日目標進度 (完成局數和分數)
+            if (userProfile.dailyTarget && !userProfile.dailyTarget.achieved) {
+                if (userProfile.dailyTarget.type === 'gamesPlayed') {
+                    userProfile.dailyTarget.currentValue++;
+                } else if (userProfile.dailyTarget.type === 'scoreTarget' && isSuccess) { // 只有成功才計入分數目標
+                    userProfile.dailyTarget.currentValue += game_currentScore; // 這裡假設 game_currentScore 是本局得分
+                }
+                if (userProfile.dailyTarget.currentValue >= userProfile.dailyTarget.targetValue) {
+                    userProfile.dailyTarget.achieved = true;
+                    if (appSettings.soundEnabled) playSound('success');
+                    resultDailyTargetAchievedEl.classList.remove('hidden');
+                } else {
+                    resultDailyTargetAchievedEl.classList.add('hidden');
+                }
+                profile_saveData(); // 保存每日目標進度
+            } else {
+                resultDailyTargetAchievedEl.classList.add('hidden');
+            }
+
+
+            if (isSuccess) {
+                result_successMessage.classList.remove('hidden'); result_failureMessage.classList.add('hidden');
+                result_scoreDisplay.textContent = game_currentScore + '分'; // 注意: game_currentScore 是本輪累計的
+                result_bestScoreDisplay.textContent = userProfile.bestScore + '分';
+                result_nextButton.innerHTML = '<i class="fas fa-arrow-right mr-2"></i>下一關';
+            } else {
+                result_successMessage.classList.add('hidden'); result_failureMessage.classList.remove('hidden');
+                result_nextButton.innerHTML = '<i class="fas fa-redo mr-2"></i>再玩一次';
+            }
+            showPage('page-result');
+        }
+
+        // ==================== 設定 (Settings) 邏輯 (與之前相同，除了重置按鈕) ====================
+        const settings_difficultyButtonsContainer = document.getElementById('settings-difficulty-buttons');
+        const settings_soundToggle = document.getElementById('settings-sound-toggle');
+        const settings_themeSelect = document.getElementById('settings-theme-select');
+        function settings_selectDifficulty(buttonElement, num) { /* ... (與之前相同) ... */ appSettings.startDifficulty = num; settings_difficultyButtonsContainer.querySelectorAll('button').forEach(btn => { const btnNumMatch = btn.textContent.match(/(\d+)/); const btnNum = btnNumMatch ? parseInt(btnNumMatch[1], 10) : -1; const isActive = (btnNum === num); btn.classList.toggle('bg-blue-600', isActive); btn.classList.toggle('text-white', isActive); btn.classList.toggle('border-blue-700', isActive); btn.classList.toggle('shadow-md', isActive); btn.classList.toggle('bg-gray-50', !isActive); btn.classList.toggle('hover:bg-gray-200', !isActive); btn.classList.toggle('text-gray-700', !isActive); btn.classList.toggle('border-gray-300', !isActive); btn.classList.toggle('hover:border-gray-400', !isActive); }); }
+        function settings_toggleSound(isSoundOn) { /* ... (與之前相同) ... */ appSettings.soundEnabled = isSoundOn; }
+        settings_themeSelect.addEventListener('change', function () { /* ... (與之前相同) ... */ appSettings.itemTheme = this.value; });
+        function settings_saveSettings() { /* ... (與之前相同) ... */ if (!currentUsername) { alert("請先登入！"); return; } localStorage.setItem(getSettingsKey(currentUsername), JSON.stringify(appSettings)); alert('設定已儲存！'); showPage('page-home'); }
+        function settings_resetProfile() {
+            if (!currentUsername) { alert("請先登入！"); return; }
+            if (confirm(`您確定要清除用戶配置 "${currentUsername}" 的所有個人紀錄 (包含每日目標進度) 嗎？此操作無法復原。`)) {
+                localStorage.removeItem(getProfileKey(currentUsername));
+                userProfile = { ...defaultUserProfile }; // 重置
+                dailyTarget_checkAndGenerate(); // 清除後重新生成當日目標
+                profile_updateDisplay();
+                alert(`用戶配置 "${currentUsername}" 的個人紀錄已清除。`);
+            }
+        }
+        function settings_loadCurrentSettings() { /* ... (與之前相同，確保 defaultAppSettings 被正確使用) ... */ if (!currentUsername) { appSettings = { ...defaultAppSettings }; settings_soundToggle.checked = appSettings.soundEnabled; settings_themeSelect.value = appSettings.itemTheme || 'fruits'; settings_difficultyButtonsContainer.querySelectorAll('button').forEach(btn => { const btnNumMatch = btn.textContent.match(/(\d+)/); if (btnNumMatch && parseInt(btnNumMatch[1], 10) === appSettings.startDifficulty) { settings_selectDifficulty(btn, appSettings.startDifficulty); } else if (btnNumMatch) { settings_selectDifficulty(btn, -1); } }); return; } const savedSettings = localStorage.getItem(getSettingsKey(currentUsername)); appSettings = savedSettings ? { ...defaultAppSettings, ...JSON.parse(savedSettings) } : { ...defaultAppSettings }; settings_soundToggle.checked = appSettings.soundEnabled; settings_themeSelect.value = appSettings.itemTheme || 'fruits'; settings_difficultyButtonsContainer.querySelectorAll('button').forEach(btn => { const btnNumMatch = btn.textContent.match(/(\d+)/); if (btnNumMatch && parseInt(btnNumMatch[1], 10) === appSettings.startDifficulty) { settings_selectDifficulty(btn, appSettings.startDifficulty); } else if (btnNumMatch) { settings_selectDifficulty(btn, -1); } }); }
+
+
+        // ==================== 個人 (Profile) 邏輯 (大部分與之前相同) ====================
+        const profile_bestScoreDisplay = document.getElementById('profile-best-score');
+        const profile_totalPlayTimeDisplay = document.getElementById('profile-total-playtime');
+        const profile_averageAccuracyDisplay = document.getElementById('profile-average-accuracy');
+        const profile_consecutiveDaysDisplay = document.getElementById('profile-consecutive-days');
+        const profile_gamesPlayedDisplay = document.getElementById('profile-games-played');
+
+        function profile_loadData() {
+            if (!currentUsername) { userProfile = { ...defaultUserProfile }; return; }
+            const savedProfile = localStorage.getItem(getProfileKey(currentUsername));
+            // 合併預設值以確保新加入的 dailyTarget 結構存在
+            userProfile = savedProfile ? { ...defaultUserProfile, ...JSON.parse(savedProfile) } : { ...defaultUserProfile };
+            // 確保 dailyTarget 結構完整
+            if (!userProfile.dailyTarget || typeof userProfile.dailyTarget.achieved === 'undefined') {
+                userProfile.dailyTarget = { ...defaultUserProfile.dailyTarget };
+            }
+        }
+        function profile_saveData() { /* ... (與之前相同) ... */ if (!currentUsername) return; localStorage.setItem(getProfileKey(currentUsername), JSON.stringify(userProfile)); }
+        function profile_updateDisplay() {
+            profileUsernameDisplayEl.textContent = currentUsername || '用戶名稱';
+            profile_bestScoreDisplay.textContent = userProfile.bestScore;
+            if (profile_totalPlayTimeDisplay) { const h = Math.floor(userProfile.totalPlayTime / 3600), m = Math.floor((userProfile.totalPlayTime % 3600) / 60), s = userProfile.totalPlayTime % 60; let ts = ""; if (h > 0) ts += `${h}時 `; if (m > 0 || h > 0) ts += `${m}分 `; ts += `${s}秒`; profile_totalPlayTimeDisplay.textContent = ts.trim() || "0秒"; }
+            if (profile_averageAccuracyDisplay) { const acc = userProfile.totalSelections > 0 ? ((userProfile.totalCorrectSelections / userProfile.totalSelections) * 100).toFixed(1) : 0; profile_averageAccuracyDisplay.textContent = `${acc}%`; }
+            if (profile_consecutiveDaysDisplay) profile_consecutiveDaysDisplay.textContent = userProfile.consecutiveDays;
+            if (profile_gamesPlayedDisplay) profile_gamesPlayedDisplay.textContent = userProfile.totalGamesPlayed;
+            profile_updateDailyTargetDisplay(); // 更新每日目標顯示
+        }
+
+        // ==================== 音效處理 (與之前相同) ====================
+        const audioContext = window.AudioContext || window.webkitAudioContext ? new (window.AudioContext || window.webkitAudioContext)() : null;
+        function playSound(type) { /* ... (與之前相同) ... */ if (!audioContext || !appSettings.soundEnabled) return; if (audioContext.state === 'suspended') audioContext.resume(); try { const o = audioContext.createOscillator(), g = audioContext.createGain(); o.connect(g); g.connect(audioContext.destination); g.gain.setValueAtTime(0.1, audioContext.currentTime); switch (type) { case 'click': o.type = 'sine'; o.frequency.setValueAtTime(600, audioContext.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.1); break; case 'correct': o.type = 'triangle'; o.frequency.setValueAtTime(800, audioContext.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.15); break; case 'incorrect': o.type = 'square'; o.frequency.setValueAtTime(200, audioContext.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.2); break; case 'success': o.type = 'sawtooth'; o.frequency.setValueAtTime(440, audioContext.currentTime); o.frequency.linearRampToValueAtTime(880, audioContext.currentTime + 0.2); g.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.3); break; }o.start(audioContext.currentTime); o.stop(audioContext.currentTime + 0.3); } catch (e) { console.error("播放音效出錯:", e); } }
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            currentUsername = localStorage.getItem('currentMemoryGameUser');
+            if (currentUsername) {
+                login_usernameInputEl.value = currentUsername;
+                /*statusBarUsernameEl.textContent = `(${currentUsername})`;*/
+                settingsForUserEl.textContent = `(用戶: ${currentUsername})`;
+                profileUsernameDisplayEl.textContent = currentUsername;
+                profile_loadData();
+                settings_loadCurrentSettings();
+                dailyTarget_checkAndGenerate(); // << 檢查並生成每日目標
+                showPage('page-home');
+                game_resetGame();
+            } else {
+                showPage('page-login');
+            }
+            login_populateExistingUsers();
+            profile_updateDisplay(); // 確保即使未登入，profile 頁面也有預設值
+        });
+    </script>
+</body>
+
+</html>
