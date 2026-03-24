@@ -14,5 +14,21 @@
     ],
     "addedDate": "2026-03-23",
     "featured": true
+  },
+  {
+    "id": "memory_training",
+    "title": "長者記憶通",
+    "description": "每日輕鬆練習的記憶力挑戰！具備每日目標、多種圖案主題與個人成績紀錄，幫助活化大腦。",
+    "icon": "🧠",
+    "thumbnail": "",
+    "path": "games-list/memory_training/index.html",
+    "tags": [
+      "單人",
+      "記憶",
+      "益智",
+      "長者友善"
+    ],
+    "addedDate": "2026-03-24",
+    "featured": true
   }
 ]
